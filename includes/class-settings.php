@@ -369,6 +369,56 @@ class Settings {
 		return $result;
 	}
 
+	/**
+	 * Returns all published posts that are excluded due to SEO noindex signals.
+	 *
+	 * Queries only the allowed post types and checks each via Indexability.
+	 * Capped at 500 posts to keep the settings page fast on large sites.
+	 *
+	 * @return array List of [ id, title, slug, type, reason ] arrays.
+	 */
+	private function get_noindex_posts(): array {
+		$allowed_types = self::get_option( 'post_types', [ 'post', 'page' ] );
+
+		if ( empty( $allowed_types ) ) {
+			return [];
+		}
+
+		$posts = get_posts(
+			[
+				'post_type'              => $allowed_types,
+				'post_status'            => 'publish',
+				'posts_per_page'         => 500,
+				'no_found_rows'          => true,
+				'update_post_meta_cache' => true,
+				'update_post_term_cache' => false,
+				'orderby'                => 'title',
+				'order'                  => 'ASC',
+			]
+		);
+
+		$result   = [];
+		$excluded = array_map( 'absint', self::get_option( 'excluded_ids', [] ) );
+
+		foreach ( $posts as $post ) {
+			// Skip posts already in the manual exclude list — shown elsewhere.
+			if ( in_array( $post->ID, $excluded, true ) ) {
+				continue;
+			}
+
+			if ( ! Indexability::is_indexable( $post ) ) {
+				$result[] = [
+					'id'    => $post->ID,
+					'title' => get_the_title( $post ),
+					'slug'  => $post->post_name,
+					'type'  => $post->post_type,
+				];
+			}
+		}
+
+		return $result;
+	}
+
 	public function render_excerpt_length_field(): void {
 		$value = (int) self::get_option( 'excerpt_length', 20 );
 		printf(
@@ -458,6 +508,81 @@ class Settings {
 				submit_button();
 				?>
 			</form>
+
+			<hr>
+
+			<h2><?php esc_html_e( 'Excluded by SEO Settings', 'wp-markdown-for-ai' ); ?></h2>
+			<?php
+			$noindex_posts = $this->get_noindex_posts();
+			$noindex_count = count( $noindex_posts );
+
+			if ( ! get_option( 'blog_public' ) ) :
+				?>
+				<div class="notice notice-warning inline" style="margin:0">
+					<p><?php esc_html_e( 'Your site is set to discourage search engines (Settings → Reading). No content will be served by any Markdown endpoint.', 'wp-markdown-for-ai' ); ?></p>
+				</div>
+			<?php elseif ( 0 === $noindex_count ) : ?>
+				<p style="color:#666"><?php esc_html_e( 'No posts or pages are currently excluded due to noindex settings.', 'wp-markdown-for-ai' ); ?></p>
+			<?php else : ?>
+				<p>
+					<?php
+					printf(
+						/* translators: %d: number of excluded posts/pages */
+						esc_html( _n(
+							'%d post or page is currently excluded from Markdown endpoints because it is set to noindex.',
+							'%d posts or pages are currently excluded from Markdown endpoints because they are set to noindex.',
+							$noindex_count,
+							'wp-markdown-for-ai'
+						) ),
+						(int) $noindex_count
+					);
+					?>
+					<button type="button" id="wpmai-noindex-toggle" class="button button-link" style="margin-left:8px">
+						<?php esc_html_e( 'Show excluded content ▼', 'wp-markdown-for-ai' ); ?>
+					</button>
+				</p>
+
+				<table id="wpmai-noindex-list" style="display:none;border-collapse:collapse;width:100%;max-width:800px">
+					<thead>
+						<tr style="border-bottom:2px solid #ddd">
+							<th style="text-align:left;padding:8px 12px"><?php esc_html_e( 'Title', 'wp-markdown-for-ai' ); ?></th>
+							<th style="text-align:left;padding:8px 12px"><?php esc_html_e( 'Type', 'wp-markdown-for-ai' ); ?></th>
+							<th style="text-align:left;padding:8px 12px"><?php esc_html_e( 'Slug', 'wp-markdown-for-ai' ); ?></th>
+							<th style="text-align:left;padding:8px 12px"><?php esc_html_e( 'Edit', 'wp-markdown-for-ai' ); ?></th>
+						</tr>
+					</thead>
+					<tbody>
+						<?php foreach ( $noindex_posts as $i => $item ) : ?>
+							<tr style="border-bottom:1px solid #eee;background:<?php echo $i % 2 === 0 ? '#fff' : '#f9f9f9'; ?>">
+								<td style="padding:8px 12px"><?php echo esc_html( $item['title'] ); ?></td>
+								<td style="padding:8px 12px"><code><?php echo esc_html( $item['type'] ); ?></code></td>
+								<td style="padding:8px 12px"><code>/<?php echo esc_html( $item['slug'] ); ?>/</code></td>
+								<td style="padding:8px 12px">
+									<a href="<?php echo esc_url( get_edit_post_link( $item['id'] ) ); ?>">
+										<?php esc_html_e( 'Edit', 'wp-markdown-for-ai' ); ?>
+									</a>
+								</td>
+							</tr>
+						<?php endforeach; ?>
+					</tbody>
+				</table>
+
+				<script>
+				( function () {
+					const btn   = document.getElementById( 'wpmai-noindex-toggle' );
+					const table = document.getElementById( 'wpmai-noindex-list' );
+					let open    = false;
+
+					btn.addEventListener( 'click', function () {
+						open            = ! open;
+						table.style.display = open ? 'table' : 'none';
+						btn.textContent = open
+							? '<?php echo esc_js( __( 'Hide excluded content ▲', 'wp-markdown-for-ai' ) ); ?>'
+							: '<?php echo esc_js( __( 'Show excluded content ▼', 'wp-markdown-for-ai' ) ); ?>';
+					} );
+				} () );
+				</script>
+			<?php endif; ?>
 
 			<hr>
 
