@@ -69,6 +69,16 @@ class Rewrite_Rules {
 			wp_die( esc_html__( 'This page is not available as Markdown.', 'wp-markdown-for-ai' ), 403 );
 		}
 
+		// Rate limiting.
+		( new Rate_Limiter() )->check();
+
+		// Conditional GET: 304 if content hasn't changed since client's copy.
+		$last_modified = strtotime( $post->post_modified_gmt );
+		if ( $this->not_modified( $last_modified ) ) {
+			status_header( 304 );
+			exit;
+		}
+
 		$cache_key = Cache::post_key( $post->ID );
 		$markdown  = Cache::get( $cache_key );
 
@@ -79,7 +89,7 @@ class Rewrite_Rules {
 			Cache::set( $cache_key, $markdown, $ttl );
 		}
 
-		$this->send_markdown_headers();
+		$this->send_markdown_headers( $last_modified );
 
 		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 		echo $markdown;
@@ -87,15 +97,36 @@ class Rewrite_Rules {
 	}
 
 	/**
-	 * Sends HTTP headers for a Markdown response.
+	 * Returns true if the client's If-Modified-Since matches the content's last-modified timestamp.
+	 *
+	 * @param int $last_modified Unix timestamp of content modification.
+	 * @return bool
 	 */
-	private function send_markdown_headers(): void {
+	private function not_modified( int $last_modified ): bool {
+		$if_modified_since = $_SERVER['HTTP_IF_MODIFIED_SINCE'] ?? ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		if ( empty( $if_modified_since ) ) {
+			return false;
+		}
+		$client_time = strtotime( $if_modified_since );
+		return $client_time !== false && $last_modified <= $client_time;
+	}
+
+	/**
+	 * Sends HTTP headers for a Markdown response.
+	 *
+	 * @param int $last_modified Unix timestamp of content modification.
+	 */
+	private function send_markdown_headers( int $last_modified = 0 ): void {
 		$ttl = (int) Settings::get_option( 'cache_ttl_hours', 12 ) * HOUR_IN_SECONDS;
 
 		header( 'Content-Type: text/markdown; charset=utf-8' );
 		header( 'X-Robots-Tag: noindex' );
 		header( 'X-Content-Type-Options: nosniff' );
 		header( 'Cache-Control: public, max-age=' . $ttl );
+
+		if ( $last_modified > 0 ) {
+			header( 'Last-Modified: ' . gmdate( 'D, d M Y H:i:s', $last_modified ) . ' GMT' );
+		}
 	}
 
 	/**

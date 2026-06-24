@@ -56,17 +56,33 @@ class Llms_Txt {
 			wp_die( esc_html__( 'This endpoint is disabled.', 'wp-markdown-for-ai' ), 404 );
 		}
 
-		$cache_key = $include_content ? 'llms_full' : 'llms_index';
-		$cached    = Cache::get( $cache_key );
+		// Rate limiting.
+		( new Rate_Limiter() )->check();
 
-		$ttl = $this->get_ttl();
+		$cache_key = $include_content ? 'llms_full' : 'llms_index';
+		$ttl       = $this->get_ttl();
+
+		// Last-Modified: use the most recently modified post across all tracked types.
+		$last_modified = $this->get_last_modified_timestamp();
+
+		// Conditional GET — 304 if client has current version.
+		$if_modified_since = $_SERVER['HTTP_IF_MODIFIED_SINCE'] ?? ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		if ( $if_modified_since && $last_modified ) {
+			$client_time = strtotime( $if_modified_since );
+			if ( $client_time !== false && $last_modified <= $client_time ) {
+				status_header( 304 );
+				exit;
+			}
+		}
+
+		$cached = Cache::get( $cache_key );
 
 		if ( false === $cached ) {
 			$cached = $this->build( $include_content );
 			Cache::set( $cache_key, $cached, $ttl );
 		}
 
-		$this->send_headers( $ttl );
+		$this->send_headers( $ttl, $last_modified );
 
 		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 		echo $cached;
@@ -74,15 +90,51 @@ class Llms_Txt {
 	}
 
 	/**
+	 * Returns the Unix timestamp of the most recently modified indexable post.
+	 *
+	 * Uses a lightweight query (no post content) for speed.
+	 *
+	 * @return int Unix timestamp, or 0 if none found.
+	 */
+	private function get_last_modified_timestamp(): int {
+		$post_types = Settings::get_option( 'post_types', [ 'post', 'page' ] );
+
+		$query = new \WP_Query(
+			[
+				'post_type'              => $post_types,
+				'post_status'            => 'publish',
+				'posts_per_page'         => 1,
+				'orderby'                => 'modified',
+				'order'                  => 'DESC',
+				'no_found_rows'          => true,
+				'update_post_meta_cache' => false,
+				'update_post_term_cache' => false,
+				'ignore_sticky_posts'    => true,
+			]
+		);
+
+		if ( empty( $query->posts ) ) {
+			return 0;
+		}
+
+		return (int) strtotime( $query->posts[0]->post_modified_gmt );
+	}
+
+	/**
 	 * Sends appropriate HTTP headers for the plain-text response.
 	 *
-	 * @param int $ttl Cache TTL in seconds, used for Cache-Control max-age.
+	 * @param int $ttl           Cache TTL in seconds, used for Cache-Control max-age.
+	 * @param int $last_modified Unix timestamp of last content modification.
 	 */
-	private function send_headers( int $ttl ): void {
+	private function send_headers( int $ttl, int $last_modified = 0 ): void {
 		header( 'Content-Type: text/plain; charset=utf-8' );
 		header( 'X-Robots-Tag: noindex' );
 		header( 'X-Content-Type-Options: nosniff' );
 		header( 'Cache-Control: public, max-age=' . $ttl );
+
+		if ( $last_modified > 0 ) {
+			header( 'Last-Modified: ' . gmdate( 'D, d M Y H:i:s', $last_modified ) . ' GMT' );
+		}
 	}
 
 	/**

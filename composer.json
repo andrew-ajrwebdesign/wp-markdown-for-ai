@@ -1,0 +1,20 @@
+{
+    "name": "ajrwebdesign/wp-markdown-for-ai",
+    "description": "Exposes WordPress content as clean Markdown for AI agents.",
+    "type": "wordpress-plugin",
+    "license": "GPL-2.0-or-later",
+    "require": {
+        "php": ">=8.0",
+        "league/html-to-markdown": "^5.1"
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "preferred-install": "dist",
+        "sort-packages": true
+    },
+    "autoload": {
+        "classmap": [
+            "includes/"
+        ]
+    }
+}
