@@ -14,72 +14,13 @@ defined( 'ABSPATH' ) || exit;
 class Sitemap {
 
 	public function register(): void {
-		// WP Core Sitemaps (WP 5.5+).
-		add_filter( 'wp_sitemaps_posts_entry', [ $this, 'add_markdown_url_to_core_entry' ], 10, 3 );
-		add_filter( 'wp_sitemaps_index_entry', [ $this, 'maybe_add_llms_to_index' ], 10, 2 );
-
-		// Yoast SEO sitemap (uses its own XML builder).
-		add_filter( 'wpseo_sitemap_url', [ $this, 'add_markdown_url_to_yoast_entry' ], 10, 2 );
-
 		// Serve a standalone /llms-sitemap.xml for AI crawlers.
+		// We intentionally do NOT hook into WP core sitemaps or Yoast — injecting
+		// extra XML into Yoast sitemaps without the xmlns:xhtml namespace declaration
+		// produces invalid XML that Google rejects. AI crawlers discover Markdown
+		// URLs from /llms.txt directly; a separate /llms-sitemap.xml is sufficient.
 		add_action( 'init', [ $this, 'register_rewrite' ] );
 		add_action( 'template_redirect', [ $this, 'maybe_serve_sitemap' ] );
-	}
-
-	/**
-	 * Adds a Markdown alternate link to each WP core sitemap entry.
-	 *
-	 * @param array<string,mixed> $entry    Sitemap entry.
-	 * @param \WP_Post            $post     Post object.
-	 * @param string              $post_type Post type slug.
-	 * @return array<string,mixed>
-	 */
-	public function add_markdown_url_to_core_entry( array $entry, \WP_Post $post, string $post_type ): array {
-		if ( ! Indexability::is_indexable( $post ) ) {
-			return $entry;
-		}
-
-		$entry['markdown_url'] = add_query_arg( 'format', 'markdown', get_permalink( $post ) );
-
-		return $entry;
-	}
-
-	/**
-	 * Appends an llms-sitemap.xml entry to the WP core sitemap index.
-	 *
-	 * @param array<string,mixed> $entry Entry data.
-	 * @param string              $name  Sitemap provider name.
-	 * @return array<string,mixed>
-	 */
-	public function maybe_add_llms_to_index( array $entry, string $name ): array {
-		return $entry;
-	}
-
-	/**
-	 * Appends a Markdown alternate <xhtml:link> inside Yoast sitemap URL blocks.
-	 *
-	 * Yoast passes a fully-rendered XML string per URL entry.
-	 *
-	 * @param string              $output XML string for this URL.
-	 * @param array<string,mixed> $url    URL data array.
-	 * @return string
-	 */
-	public function add_markdown_url_to_yoast_entry( string $output, array $url ): string {
-		$loc = $url['loc'] ?? '';
-		if ( empty( $loc ) ) {
-			return $output;
-		}
-
-		$post = get_post( url_to_postid( $loc ) );
-		if ( ! $post || ! Indexability::is_indexable( $post ) ) {
-			return $output;
-		}
-
-		$markdown_url = esc_url( add_query_arg( 'format', 'markdown', $loc ) );
-
-		$alternate = "\t\t<xhtml:link rel=\"alternate\" type=\"text/markdown\" href=\"{$markdown_url}\" />\n";
-
-		return str_replace( '</url>', $alternate . "\t</url>", $output );
 	}
 
 	/**
