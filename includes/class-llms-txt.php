@@ -217,13 +217,15 @@ class Llms_Txt {
 		$length = (int) Settings::get_option( 'excerpt_length', 20 );
 
 		if ( $post->post_excerpt ) {
-			return wp_trim_words( wp_strip_all_tags( $post->post_excerpt ), $length, '...' );
+			$text = wp_strip_all_tags( $post->post_excerpt );
+		} else {
+			$text = wp_strip_all_tags( $post->post_content );
+			$text = preg_replace( '/\s+/', ' ', $text );
 		}
 
-		$content = wp_strip_all_tags( $post->post_content );
-		$content = preg_replace( '/\s+/', ' ', $content );
+		$text = html_entity_decode( $text, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
 
-		return wp_trim_words( $content, $length, '...' );
+		return wp_trim_words( $text, $length, '...' );
 	}
 
 	/**
