@@ -16,7 +16,41 @@ class Settings {
 		add_action( 'admin_init', [ $this, 'register_settings' ] );
 		add_action( 'admin_post_wpmai_clear_cache', [ $this, 'handle_clear_cache' ] );
 		add_action( 'admin_notices', [ $this, 'admin_notices' ] );
+		add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_scripts' ] );
 		add_filter( 'plugin_action_links_wp-markdown-for-ai/wp-markdown-for-ai.php', [ $this, 'add_action_links' ] );
+	}
+
+	/**
+	 * Enqueues admin JS on the plugin settings page only.
+	 *
+	 * @param string $hook Current admin page hook.
+	 */
+	public function enqueue_scripts( string $hook ): void {
+		if ( 'settings_page_wp-markdown-for-ai' !== $hook ) {
+			return;
+		}
+
+		wp_enqueue_script(
+			'wpmai-admin',
+			WPMAI_PLUGIN_URL . 'assets/js/admin.js',
+			[],
+			WPMAI_VERSION,
+			true
+		);
+
+		wp_localize_script(
+			'wpmai-admin',
+			'wpmai',
+			[
+				'i18n' => [
+					'loading'      => __( 'Loading…', 'wp-markdown-for-ai' ),
+					'success'      => __( 'Showing live Markdown output — this is exactly what an AI agent receives.', 'wp-markdown-for-ai' ),
+					'error'        => __( 'Error: ', 'wp-markdown-for-ai' ),
+					'showExcluded' => __( 'Show excluded content ▼', 'wp-markdown-for-ai' ),
+					'hideExcluded' => __( 'Hide excluded content ▲', 'wp-markdown-for-ai' ),
+				],
+			]
+		);
 	}
 
 	public function add_menu_page(): void {
@@ -567,21 +601,6 @@ class Settings {
 					</tbody>
 				</table>
 
-				<script>
-				( function () {
-					const btn   = document.getElementById( 'wpmai-noindex-toggle' );
-					const table = document.getElementById( 'wpmai-noindex-list' );
-					let open    = false;
-
-					btn.addEventListener( 'click', function () {
-						open            = ! open;
-						table.style.display = open ? 'table' : 'none';
-						btn.textContent = open
-							? '<?php echo esc_js( __( 'Hide excluded content ▲', 'wp-markdown-for-ai' ) ); ?>'
-							: '<?php echo esc_js( __( 'Show excluded content ▼', 'wp-markdown-for-ai' ) ); ?>';
-					} );
-				} () );
-				</script>
 			<?php endif; ?>
 
 			<hr>
@@ -627,46 +646,6 @@ class Settings {
 				<textarea id="wpmai-preview-output" readonly style="width:100%;height:500px;font-family:monospace;font-size:12px;line-height:1.6;background:#1e1e1e;color:#d4d4d4;border:1px solid #333;padding:16px;resize:vertical;box-sizing:border-box"></textarea>
 			</div>
 
-			<script>
-			( function () {
-				const select  = document.getElementById( 'wpmai-preview-select' );
-				const btn     = document.getElementById( 'wpmai-preview-btn' );
-				const wrap    = document.getElementById( 'wpmai-preview-wrap' );
-				const output  = document.getElementById( 'wpmai-preview-output' );
-				const status  = document.getElementById( 'wpmai-preview-status' );
-				const extLink = document.getElementById( 'wpmai-preview-link' );
-
-				btn.addEventListener( 'click', function () {
-					const url = select.value;
-
-					if ( ! url ) {
-						return;
-					}
-
-					wrap.style.display    = 'block';
-					output.value          = '';
-					status.textContent    = '<?php echo esc_js( __( 'Loading…', 'wp-markdown-for-ai' ) ); ?>';
-					extLink.style.display = 'none';
-
-					fetch( url, { credentials: 'same-origin' } )
-						.then( function ( res ) {
-							if ( ! res.ok ) {
-								throw new Error( 'HTTP ' + res.status );
-							}
-							return res.text();
-						} )
-						.then( function ( text ) {
-							output.value          = text;
-							status.textContent    = '<?php echo esc_js( __( 'Showing live Markdown output — this is exactly what an AI agent receives.', 'wp-markdown-for-ai' ) ); ?>';
-							extLink.href          = url;
-							extLink.style.display = 'inline';
-						} )
-						.catch( function ( err ) {
-							status.textContent = '<?php echo esc_js( __( 'Error: ', 'wp-markdown-for-ai' ) ); ?>' + err.message;
-						} );
-				} );
-			} () );
-			</script>
 
 			<hr>
 
