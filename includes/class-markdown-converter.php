@@ -121,14 +121,16 @@ class Markdown_Converter {
 	 */
 	private function get_content( \WP_Post $post ): string {
 		// Elementor: use its own renderer when available and the post uses Elementor.
-		// Calling get_builder_content_for_display() outside the loop requires setting
-		// the global $post so Elementor's context checks pass.
+		// Capture the parameter before declaring global — PHP replaces the local variable
+		// with the global when `global $post` is declared, making $post = $post a no-op.
 		if ( $this->is_elementor_post( $post ) ) {
+			$elementor_post = $post;
 			global $post;
 			$original_post = $post;
-			$post          = $post; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
+			$post          = $elementor_post; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
 			setup_postdata( $post );
-			$content = \Elementor\Plugin::instance()->frontend->get_builder_content_for_display( $post->ID, true );
+			// Pass false for $with_css — we don't want Elementor's stylesheet inlined in the HTML.
+			$content = \Elementor\Plugin::instance()->frontend->get_builder_content_for_display( $elementor_post->ID, false );
 			$post    = $original_post; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
 			wp_reset_postdata();
 
