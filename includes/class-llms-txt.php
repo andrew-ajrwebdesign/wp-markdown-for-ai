@@ -166,6 +166,10 @@ class Llms_Txt {
 			$output .= "## {$label}\n\n";
 
 			foreach ( $posts->posts as $post ) {
+				if ( ! Indexability::is_indexable( $post ) ) {
+					continue;
+				}
+
 				$title        = html_entity_decode( get_the_title( $post ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
 				$url          = get_permalink( $post );
 				$markdown_url = add_query_arg( 'format', 'markdown', $url );

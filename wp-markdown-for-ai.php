@@ -20,6 +20,7 @@ define( 'WPMAI_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 define( 'WPMAI_TEXT_DOMAIN', 'wp-markdown-for-ai' );
 
 require_once WPMAI_PLUGIN_DIR . 'includes/class-cache.php';
+require_once WPMAI_PLUGIN_DIR . 'includes/class-indexability.php';
 require_once WPMAI_PLUGIN_DIR . 'includes/class-markdown-converter.php';
 require_once WPMAI_PLUGIN_DIR . 'includes/class-llms-txt.php';
 require_once WPMAI_PLUGIN_DIR . 'includes/class-rewrite-rules.php';

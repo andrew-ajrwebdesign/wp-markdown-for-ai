@@ -64,6 +64,11 @@ class Rewrite_Rules {
 			wp_die( esc_html__( 'This page is not available as Markdown.', 'wp-markdown-for-ai' ), 403 );
 		}
 
+		if ( ! Indexability::is_indexable( $post ) ) {
+			status_header( 403 );
+			wp_die( esc_html__( 'This page is not available as Markdown.', 'wp-markdown-for-ai' ), 403 );
+		}
+
 		$cache_key = Cache::post_key( $post->ID );
 		$markdown  = Cache::get( $cache_key );
 
@@ -153,6 +158,10 @@ class Rewrite_Rules {
 		$excluded = Settings::get_option( 'excluded_ids', [] );
 
 		if ( in_array( $post->ID, array_map( 'absint', $excluded ), true ) ) {
+			return false;
+		}
+
+		if ( ! Indexability::is_indexable( $post ) ) {
 			return false;
 		}
 
