@@ -163,7 +163,8 @@ class Llms_Txt {
 			$type_obj = get_post_type_object( $post_type );
 			$label    = $type_obj ? $type_obj->labels->name : ucfirst( $post_type );
 
-			$output .= "## {$label}\n\n";
+			// Build section content first — skip the heading if nothing passes indexability.
+			$section = '';
 
 			foreach ( $posts->posts as $post ) {
 				if ( ! Indexability::is_indexable( $post ) ) {
@@ -183,20 +184,22 @@ class Llms_Txt {
 						Cache::set( Cache::post_key( $post->ID ), $cached_md, $this->get_ttl() );
 					}
 
-					$output .= "### {$title}\n\n";
-					$output .= "URL: {$url}\n\n";
-					$output .= $cached_md . "\n\n";
-					$output .= "---\n\n";
+					$section .= "### {$title}\n\n";
+					$section .= "URL: {$url}\n\n";
+					$section .= $cached_md . "\n\n";
+					$section .= "---\n\n";
 				} else {
-					$output .= "- [{$title}]({$markdown_url})";
+					$section .= "- [{$title}]({$markdown_url})";
 					if ( $excerpt ) {
-						$output .= ': ' . $excerpt;
+						$section .= ': ' . $excerpt;
 					}
-					$output .= "\n";
+					$section .= "\n";
 				}
 			}
 
-			$output .= "\n";
+			if ( $section ) {
+				$output .= "## {$label}\n\n" . $section . "\n";
+			}
 
 			wp_reset_postdata();
 		}
