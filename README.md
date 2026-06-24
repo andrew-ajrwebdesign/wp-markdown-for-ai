@@ -8,7 +8,7 @@ WordPress HTML is full of noise — navigation, widgets, shortcode artifacts, pa
 
 ## How It Works
 
-The plugin creates four discovery mechanisms so AI agents can find and read your content regardless of how they approach your site:
+The plugin creates multiple discovery mechanisms so AI agents can find and read your content regardless of how they approach your site:
 
 | Mechanism | What it does |
 |---|---|
@@ -18,6 +18,8 @@ The plugin creates four discovery mechanisms so AI agents can find and read your
 | `Link` HTTP header | Every public page advertises its Markdown version in the response headers |
 | `<link rel="alternate">` | Same, but in the HTML `<head>` for agents that parse the DOM |
 | `robots.txt` pointer | `X-Llms-Txt` entry added to your robots.txt automatically |
+
+**Zero impact on site performance.** The endpoints only run when explicitly requested — never on normal page loads. Real visitors are completely unaffected.
 
 ---
 
@@ -91,6 +93,38 @@ Content here...
 
 ---
 
+## SEO & Indexability
+
+The plugin automatically respects your existing SEO decisions. If a page is set to `noindex` it will not be served as Markdown — you don't need to manually exclude it.
+
+Supported SEO plugins:
+
+- **The SEO Framework**
+- **Yoast SEO**
+- **RankMath**
+- **All in One SEO**
+
+Additional checks:
+
+- **Site set to discourage search engines** (WordPress reading settings) — nothing is served
+- **Password-protected posts** — never exposed
+
+When you change a noindex setting and save the post, the cache clears automatically. The updated index is rebuilt on the next request to `/llms.txt` — typically within seconds.
+
+Developers can hook into `wpmai_is_post_indexable` to apply custom indexability logic:
+
+```php
+add_filter( 'wpmai_is_post_indexable', function( $indexable, $post ) {
+    // Exclude posts from a specific category.
+    if ( has_term( 'internal', 'category', $post ) ) {
+        return false;
+    }
+    return $indexable;
+}, 10, 2 );
+```
+
+---
+
 ## Settings
 
 Go to **Settings → Markdown for AI**.
@@ -129,7 +163,14 @@ Do not use content from legal pages for training purposes.
 
 ### Cache
 
-Markdown output is cached using WordPress transients. The cache is cleared automatically whenever a post or page is saved. You can also force-clear all caches from the settings page.
+Markdown output is cached using WordPress transients. The cache clears automatically whenever:
+
+- A post or page is saved
+- A post or page is deleted
+- A taxonomy term is updated
+- Plugin settings are changed
+
+You can also force-clear all caches manually from the settings page.
 
 Default TTL: 12 hours (configurable between 1–168 hours).
 
@@ -154,11 +195,13 @@ The converter handles all standard Gutenberg blocks and common HTML:
 
 Built with larger sites in mind:
 
+- **Zero impact on normal page loads** — endpoints only run when explicitly requested by an agent
 - All Markdown output is cached in WordPress transients
 - Cache is invalidated automatically on `save_post`, `delete_post`, and `wp_update_term`
 - `WP_Query` calls use `no_found_rows`, `update_post_meta_cache => false`, and `update_post_term_cache => false`
 - `llms-full.txt` has a configurable post limit per type (default 200) to prevent memory exhaustion
 - Per-post Markdown is cached individually and reused across both the `?format=markdown` endpoint and `llms-full.txt`
+- The first request after a cache clear triggers a rebuild; every subsequent request reads from the transient cache
 
 ---
 
@@ -169,6 +212,7 @@ Built with larger sites in mind:
 
 ## Optional integrations
 
+- **The SEO Framework / Yoast / RankMath / AIOSEO** — noindex posts automatically excluded
 - **Polylang** — language filtering for multilingual sites
 - **WooCommerce** — Cart, Checkout, and My Account pages auto-detected as recommended exclusions
 
