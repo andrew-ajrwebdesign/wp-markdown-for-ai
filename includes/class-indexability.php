@@ -82,7 +82,8 @@ class Indexability {
 	/**
 	 * The SEO Framework noindex check.
 	 *
-	 * TSF uses its own API when available; falls back to post meta.
+	 * Checks post meta directly — TSF stores noindex as _genesis_noindex = '1'.
+	 * Falls back to the TSF API for forward compatibility with future versions.
 	 *
 	 * @param \WP_Post $post Post to check.
 	 * @return bool
@@ -92,7 +93,13 @@ class Indexability {
 			return false;
 		}
 
-		// Use TSF's public API if available (TSF 4.x+).
+		// Check post meta directly — confirmed key used by TSF.
+		$noindex = get_post_meta( $post->ID, '_genesis_noindex', true );
+		if ( '1' === (string) $noindex ) {
+			return true;
+		}
+
+		// TSF API fallback for future versions that may change the meta key.
 		if ( function_exists( 'the_seo_framework' ) ) {
 			$tsf = the_seo_framework();
 			if ( method_exists( $tsf, 'is_post_robots_meta_noindex' ) ) {
@@ -100,9 +107,7 @@ class Indexability {
 			}
 		}
 
-		// Fallback: read the post meta directly.
-		$noindex = get_post_meta( $post->ID, '_genesis_noindex', true );
-		return '1' === (string) $noindex;
+		return false;
 	}
 
 	/**
