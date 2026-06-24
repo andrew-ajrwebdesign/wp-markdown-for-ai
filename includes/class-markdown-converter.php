@@ -58,6 +58,16 @@ class Markdown_Converter {
 
 		$markdown = $this->converter->convert( $html );
 
+		// Gutenberg can nest <strong> tags, producing ****text**** or worse.
+		// Collapse any run of 4+ asterisks on each side down to a single **.
+		$markdown = preg_replace( '/\*{4,}(.+?)\*{4,}/s', '**$1**', $markdown );
+
+		// Remove image references with no alt text — decorative/icon images add noise.
+		$markdown = preg_replace( '/!\[\]\([^)]+\)\n?/', '', $markdown );
+
+		// Decode any HTML entities that survived conversion (e.g. &amp; in headings).
+		$markdown = html_entity_decode( $markdown, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+
 		// Remove orphaned emphasis markers on their own line.
 		$markdown = preg_replace( '/^[_*]{1,2}\s*[_*]{0,2}$/m', '', $markdown );
 
