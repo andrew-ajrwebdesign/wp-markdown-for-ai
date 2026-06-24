@@ -14,7 +14,9 @@ The plugin creates multiple discovery mechanisms so AI agents can find and read 
 |---|---|
 | `/llms.txt` | Index of all public content with titles, URLs, and excerpts |
 | `/llms-full.txt` | Full site content inlined as Markdown in a single file |
+| `/llms-sitemap.xml` | XML sitemap of all Markdown URLs for AI crawlers |
 | `?format=markdown` | Append to any post or page URL to get clean Markdown |
+| REST API | Programmatic access via `/wp-json/wpmai/v1/` |
 | `Link` HTTP header | Every public page advertises its Markdown version in the response headers |
 | `<link rel="alternate">` | Same, but in the HTML `<head>` for agents that parse the DOM |
 | `robots.txt` pointer | `X-Llms-Txt` entry added to your robots.txt automatically |
@@ -66,6 +68,23 @@ Generated: 2026-06-24T12:00:00Z
 
 The same structure as `llms.txt` but with the full Markdown content of every post and page inlined. Useful for smaller sites or when you want to give an AI agent everything in one request.
 
+### `/llms-sitemap.xml`
+
+An XML sitemap listing every indexable Markdown URL with `<lastmod>` dates and page titles. Intended for AI crawlers that prefer a machine-readable index over `llms.txt`.
+
+```xml
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://example.com/about/?format=markdown</loc>
+    <lastmod>2026-06-01</lastmod>
+    <dc:title>About</dc:title>
+  </url>
+  ...
+</urlset>
+```
+
+The sitemap is served with `X-Robots-Tag: noindex` so it does not appear in search engine indexes.
+
 ### `?format=markdown`
 
 Append `?format=markdown` to any post or page URL:
@@ -91,6 +110,52 @@ type: page
 Content here...
 ```
 
+### REST API
+
+Two endpoints are available under `/wp-json/wpmai/v1/`:
+
+#### `GET /wp-json/wpmai/v1/posts`
+
+Returns a paginated list of all indexable posts with their Markdown URLs.
+
+**Query parameters:**
+
+| Parameter | Default | Description |
+|---|---|---|
+| `page` | `1` | Page number |
+| `per_page` | `20` | Results per page (max 100) |
+| `type` | — | Filter by post type slug |
+
+**Response headers:** `X-WP-Total`, `X-WP-TotalPages`
+
+**Example response:**
+
+```json
+[
+  {
+    "id": 42,
+    "type": "page",
+    "title": "About",
+    "url": "https://example.com/about/",
+    "markdown_url": "https://example.com/about/?format=markdown",
+    "modified": "2026-06-01T10:00:00+00:00"
+  }
+]
+```
+
+#### `GET /wp-json/wpmai/v1/posts/{id}/markdown`
+
+Returns the full Markdown for a single post.
+
+```json
+{
+  "id": 42,
+  "markdown": "---\ntitle: About\n..."
+}
+```
+
+Returns `403` if the post is excluded or set to noindex. Returns `404` if the post does not exist or is not published. The response includes a `Last-Modified` header.
+
 ---
 
 ## SEO & Indexability
@@ -112,18 +177,6 @@ Additional checks:
 When you change a noindex setting and save the post, the cache clears automatically. The updated index is rebuilt on the next request to `/llms.txt` — typically within seconds.
 
 Post type sections are omitted entirely from `llms.txt` if all posts in that section are excluded — no empty headings are shown.
-
-Developers can hook into `wpmai_is_post_indexable` to apply custom indexability logic:
-
-```php
-add_filter( 'wpmai_is_post_indexable', function( $indexable, $post ) {
-    // Exclude posts from a specific category.
-    if ( has_term( 'internal', 'category', $post ) ) {
-        return false;
-    }
-    return $indexable;
-}, 10, 2 );
-```
 
 ---
 
@@ -180,16 +233,30 @@ Default TTL: 12 hours (configurable between 1–168 hours).
 
 ## Markdown Output Quality
 
-The converter handles all standard Gutenberg blocks and common HTML:
+The converter uses [league/html-to-markdown](https://github.com/thephpleague/html-to-markdown) for robust, spec-compliant conversion. It handles:
 
 - Headings, bold, italic, inline code, code blocks
-- Ordered and unordered lists
+- Ordered and unordered lists (including nested lists)
+- Tables — converted to pipe table format
 - Blockquotes
 - Links with anchor text preserved
-- Images — decorative icons (no alt text or alt text ending in "Icon") are stripped; content images are kept with alt text
+- Images — decorative images with no alt text are stripped; content images are kept with alt text
 - Horizontal rules
 - YAML frontmatter with title, URL, date, modified, author, post type, categories, and tags
 - HTML entities decoded to plain text
+
+Noise removed automatically: `<script>`, `<style>`, `<nav>`, `<header>`, `<footer>`, `<form>`, `<iframe>`, `<noscript>`.
+
+### Page Builder Support
+
+| Builder | How content is retrieved |
+|---|---|
+| **Gutenberg** | Block comment delimiters stripped; `the_content` filter applied |
+| **Elementor** | `get_builder_content_for_display()` called directly when Elementor is active |
+| **WPBakery / Divi** | `the_content` filter expands shortcodes into HTML |
+| **Other / inactive builder** | `strip_shortcodes()` removes unexpanded shortcode syntax |
+
+Gutenberg produces the cleanest output. Page builder output is readable but may contain more blank lines due to wrapper `<div>` nesting.
 
 ---
 
@@ -198,12 +265,59 @@ The converter handles all standard Gutenberg blocks and common HTML:
 Built with larger sites in mind:
 
 - **Zero impact on normal page loads** — endpoints only run when explicitly requested by an agent
-- All Markdown output is cached in WordPress transients
+- All Markdown output is cached in WordPress transients (compatible with Redis/Memcache when object cache is configured)
 - Cache is invalidated automatically on `save_post`, `delete_post`, and `wp_update_term`
-- `WP_Query` calls use `no_found_rows`, `update_post_meta_cache => false`, and `update_post_term_cache => false`
+- `WP_Query` calls use `no_found_rows`, optimised meta/term cache flags, and capped `posts_per_page`
 - `llms-full.txt` has a configurable post limit per type (default 200) to prevent memory exhaustion
 - Per-post Markdown is cached individually and reused across both the `?format=markdown` endpoint and `llms-full.txt`
 - The first request after a cache clear triggers a rebuild; every subsequent request reads from the transient cache
+- **`Last-Modified` + `304 Not Modified`** — all endpoints send a `Last-Modified` header and honour `If-Modified-Since` conditional GET requests, saving bandwidth for agents that poll regularly
+
+---
+
+## Rate Limiting
+
+All Markdown endpoints are rate-limited per IP address to prevent abuse.
+
+Default: **60 requests per 60 seconds**. Exceeding the limit returns `429 Too Many Requests` with a `Retry-After` header.
+
+Response headers on every request:
+
+```
+X-RateLimit-Limit: 60
+X-RateLimit-Remaining: 58
+X-RateLimit-Reset: 1719230400
+```
+
+Rate limiting uses WordPress transients — no extra tables or infrastructure required. It works automatically with Redis or Memcache when an object cache is configured.
+
+Limits are adjustable via filters (see [Developer Hooks](#developer-hooks)).
+
+---
+
+## Developer Hooks
+
+### Indexability
+
+```php
+// Exclude posts with a specific custom field from Markdown output.
+add_filter( 'wpmai_is_post_indexable', function( $indexable, $post ) {
+    if ( get_post_meta( $post->ID, '_internal_only', true ) ) {
+        return false;
+    }
+    return $indexable;
+}, 10, 2 );
+```
+
+### Rate limiting
+
+```php
+// Allow 120 requests per window.
+add_filter( 'wpmai_rate_limit_requests', fn() => 120 );
+
+// Extend the window to 2 minutes.
+add_filter( 'wpmai_rate_limit_window', fn() => 120 );
+```
 
 ---
 
@@ -217,6 +331,8 @@ Built with larger sites in mind:
 - **The SEO Framework / Yoast / RankMath / AIOSEO** — noindex posts automatically excluded
 - **Polylang** — language filtering for multilingual sites
 - **WooCommerce** — Cart, Checkout, and My Account pages auto-detected as recommended exclusions
+- **Elementor** — content retrieved via Elementor's own render API for accurate output
+- **Redis / Memcache** — rate limiting and Markdown cache automatically use object cache when configured
 
 ---
 
