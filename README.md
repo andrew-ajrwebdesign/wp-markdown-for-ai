@@ -111,6 +111,8 @@ Additional checks:
 
 When you change a noindex setting and save the post, the cache clears automatically. The updated index is rebuilt on the next request to `/llms.txt` — typically within seconds.
 
+Post type sections are omitted entirely from `llms.txt` if all posts in that section are excluded — no empty headings are shown.
+
 Developers can hook into `wpmai_is_post_indexable` to apply custom indexability logic:
 
 ```php
