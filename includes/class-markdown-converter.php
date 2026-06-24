@@ -113,19 +113,55 @@ class Markdown_Converter {
 	/**
 	 * Returns the processed post content ready for Markdown conversion.
 	 *
+	 * Handles Gutenberg (default), Elementor, WPBakery/Divi (shortcode-based),
+	 * and any other builder that hooks into the_content filter.
+	 *
 	 * @param \WP_Post $post Post object.
 	 * @return string
 	 */
 	private function get_content( \WP_Post $post ): string {
+		// Elementor: use its own renderer when available and the post uses Elementor.
+		// Calling get_builder_content_for_display() outside the loop requires setting
+		// the global $post so Elementor's context checks pass.
+		if ( $this->is_elementor_post( $post ) ) {
+			global $post;
+			$original_post = $post;
+			$post          = $post; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
+			setup_postdata( $post );
+			$content = \Elementor\Plugin::instance()->frontend->get_builder_content_for_display( $post->ID, true );
+			$post    = $original_post; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
+			wp_reset_postdata();
+
+			if ( ! empty( trim( strip_tags( $content ) ) ) ) {
+				return $content;
+			}
+			// Fall through to standard path if Elementor returned empty content.
+		}
+
 		$content = $post->post_content;
 
 		// Strip Gutenberg block comment delimiters.
 		$content = preg_replace( '/<!--\s*\/?wp:[^\-].*?-->/s', '', $content );
 
-		// Apply standard WP content filters (shortcodes, embeds, etc.).
+		// Apply standard WP content filters (runs WPBakery/Divi shortcodes, embeds, etc.).
 		$content = apply_filters( 'the_content', $content );
 
+		// Strip any shortcodes that were not expanded (e.g. inactive builder plugins).
+		$content = strip_shortcodes( $content );
+
 		return $content;
+	}
+
+	/**
+	 * Returns true if a post was built with Elementor and the Elementor frontend is available.
+	 *
+	 * @param \WP_Post $post Post object.
+	 * @return bool
+	 */
+	private function is_elementor_post( \WP_Post $post ): bool {
+		return class_exists( '\Elementor\Plugin' )
+			&& isset( \Elementor\Plugin::instance()->frontend )
+			&& 'builder' === get_post_meta( $post->ID, '_elementor_edit_mode', true );
 	}
 
 	/**
