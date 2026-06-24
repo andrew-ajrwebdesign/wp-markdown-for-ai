@@ -139,7 +139,7 @@ class Llms_Txt {
 				'post_status'            => 'publish',
 				'posts_per_page'         => $limit,
 				'no_found_rows'          => true,
-				'update_post_meta_cache' => false,
+				'update_post_meta_cache' => true, // Required for Indexability SEO meta checks.
 				'update_post_term_cache' => ! $include_content,
 				'orderby'                => 'date',
 				'order'                  => 'DESC',
